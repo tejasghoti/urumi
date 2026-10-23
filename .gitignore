@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Production / build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# Environment & local secrets
+deploy/secrets.local.yaml
+.env
+.env.local
+*.local.yaml
+
+# OS and IDE files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.log
