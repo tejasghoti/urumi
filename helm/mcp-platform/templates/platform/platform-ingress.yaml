@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-ingress
+  namespace: {{ .Values.platform.namespace }}
+  annotations:
+    kubernetes.io/ingress.class: {{ .Values.platform.ingressClassName }}
+spec:
+  ingressClassName: {{ .Values.platform.ingressClassName }}
+  rules:
+    - host: {{ .Values.platform.gateway.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8080
+    - host: {{ .Values.platform.gateway.dashHost }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dashboard
+                port:
+                  number: 80

@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: {{ .Values.platform.namespace }}
+  labels:
+    app: gateway
+spec:
+  replicas: {{ .Values.platform.gateway.replicas }}
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+      containers:
+        - name: gateway
+          image: {{ .Values.platform.gateway.image }}
+          imagePullPolicy: {{ .Values.platform.gateway.imagePullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PORT
+              value: "8080"
+            - name: POSTGRES_HOST
+              value: "gateway-db"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_USER
+              value: "gateway"
+            - name: POSTGRES_DB
+              value: "gateway"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-secrets
+                  key: POSTGRES_PASSWORD
+            - name: GATEWAY_DATA_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-secrets
+                  key: GATEWAY_DATA_KEY
+            - name: SEED_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-secrets
+                  key: SEED_ADMIN_PASSWORD
+            - name: SEED_MEMBER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-secrets
+                  key: SEED_MEMBER_PASSWORD
+            - name: LLM_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-secrets
+                  key: LLM_BASE_URL
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-secrets
+                  key: LLM_API_KEY
+            - name: LLM_MODEL
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-secrets
+                  key: LLM_MODEL
+            - name: COOKIE_SECURE
+              value: {{ .Values.platform.gateway.cookieSecure | quote }}
+          resources:
+            {{- toYaml .Values.platform.gateway.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: {{ .Values.platform.namespace }}
+  labels:
+    app: gateway
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  selector:
+    app: gateway

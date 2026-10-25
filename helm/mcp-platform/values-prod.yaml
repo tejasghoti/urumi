@@ -1,0 +1,63 @@
+# Production values for mcp-platform on k3s / production Kubernetes
+#
+# KEY DIFFERENCES FROM LOCAL:
+# 1. hostnames: FQDNs (store.example.com, dash.example.com, mcp.example.com) instead of *.local
+# 2. storageClass: 'local-path' (standard k3s provisioner) instead of Kind's 'standard'
+# 3. cookieSecure: true (enforces Secure flag on session cookies over HTTPS)
+# 4. image repository prefix: production container registry (e.g. ghcr.io/org/* or registry.example.com/*)
+# 5. imagePullPolicy: 'Always' or 'IfNotPresent' with explicit semantic tags instead of ':latest'
+# 6. replica counts: gateway remains 1 (documented MCP in-memory session constraint; see docs/system-design.md),
+#    dashboard scalable to 2+ behind ingress.
+# 7. larger storage: 10Gi for store DB and files, 5Gi for postgres.
+# 8. ingressClassName: 'traefik' or 'nginx' depending on k3s distribution defaults.
+# 9. cert-manager TLS annotations and spec blocks (optional / commented below).
+
+global:
+  storageClass: "local-path"
+
+store:
+  host: "store.example.com"
+  ingressClassName: "nginx"
+  mariadb:
+    storageSize: "10Gi"
+  wordpress:
+    storageSize: "10Gi"
+
+platform:
+  ingressClassName: "nginx"
+  gateway:
+    host: "mcp.example.com"
+    dashHost: "dash.example.com"
+    image: "ghcr.io/example-org/mcp-gateway:v1.0.0"
+    imagePullPolicy: "Always"
+    cookieSecure: true
+    replicas: 1
+  postgres:
+    storageSize: "5Gi"
+  wooMcp:
+    image: "ghcr.io/example-org/woo-mcp:v1.0.0"
+    imagePullPolicy: "Always"
+    replicas: 1
+  notesMcp:
+    image: "ghcr.io/example-org/notes-mcp:v1.0.0"
+    imagePullPolicy: "Always"
+    replicas: 1
+  utilMcp:
+    image: "ghcr.io/example-org/util-mcp:v1.0.0"
+    imagePullPolicy: "Always"
+    replicas: 1
+  dashboard:
+    image: "ghcr.io/example-org/mcp-dashboard:v1.0.0"
+    imagePullPolicy: "Always"
+    replicas: 2
+
+# Optional production TLS configuration with cert-manager:
+# ingress:
+#   tls:
+#     - hosts:
+#         - store.example.com
+#         - dash.example.com
+#         - mcp.example.com
+#       secretName: mcp-platform-tls
+#   annotations:
+#     cert-manager.io/cluster-issuer: "letsencrypt-prod"

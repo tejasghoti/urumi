@@ -1,0 +1,124 @@
+global:
+  storageClass: "standard"
+
+store:
+  namespace: "store"
+  host: "store.local"
+  ingressClassName: "nginx"
+  mariadb:
+    image: "mariadb:11"
+    storageSize: "2Gi"
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+  wordpress:
+    image: "wordpress:6-apache"
+    storageSize: "5Gi"
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+  bootstrap:
+    image: "wordpress:cli"
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+  secrets:
+    mariadbRootPassword: ""
+    mariadbPassword: ""
+    wpAdminUser: "admin"
+    wpAdminPassword: ""
+    wpAdminEmail: "admin@store.local"
+    wcConsumerKey: ""
+    wcConsumerSecret: ""
+
+platform:
+  namespace: "platform"
+  ingressClassName: "nginx"
+  gateway:
+    host: "mcp.local"
+    dashHost: "dash.local"
+    image: "gateway:latest"
+    imagePullPolicy: "IfNotPresent"
+    replicas: 1
+    cookieSecure: false
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+  postgres:
+    image: "postgres:16"
+    storageSize: "2Gi"
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+  wooMcp:
+    image: "woo-mcp:latest"
+    imagePullPolicy: "IfNotPresent"
+    replicas: 1
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+  notesMcp:
+    image: "notes-mcp:latest"
+    imagePullPolicy: "IfNotPresent"
+    replicas: 1
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+  utilMcp:
+    image: "util-mcp:latest"
+    imagePullPolicy: "IfNotPresent"
+    replicas: 1
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+  dashboard:
+    image: "dashboard:latest"
+    imagePullPolicy: "IfNotPresent"
+    replicas: 1
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "32Mi"
+      limits:
+        cpu: "200m"
+        memory: "128Mi"
+  secrets:
+    postgresPassword: ""
+    dataKey: ""
+    seedAdminPassword: ""
+    seedMemberPassword: ""
+    llmBaseUrl: "https://api.openai.com/v1"
+    llmApiKey: ""
+    llmModel: "gpt-4o-mini"

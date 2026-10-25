@@ -1,0 +1,22 @@
+global:
+  storageClass: "standard"
+
+store:
+  host: "store.local"
+  ingressClassName: "nginx"
+
+platform:
+  ingressClassName: "nginx"
+  gateway:
+    host: "mcp.local"
+    dashHost: "dash.local"
+    cookieSecure: false
+    imagePullPolicy: "IfNotPresent"
+  wooMcp:
+    imagePullPolicy: "IfNotPresent"
+  notesMcp:
+    imagePullPolicy: "IfNotPresent"
+  utilMcp:
+    imagePullPolicy: "IfNotPresent"
+  dashboard:
+    imagePullPolicy: "IfNotPresent"

@@ -1,0 +1,244 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: store-bootstrap
+  namespace: {{ .Values.store.namespace }}
+  labels:
+    app: store-bootstrap
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 30
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app: store-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsUser: 33
+        runAsGroup: 33
+        fsGroup: 33
+      containers:
+        - name: bootstrap
+          image: {{ .Values.store.bootstrap.image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOME
+              value: /tmp
+            - name: WORDPRESS_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: store-wp
+                  key: WORDPRESS_DB_HOST
+            - name: WORDPRESS_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: store-wp
+                  key: WORDPRESS_DB_NAME
+            - name: WORDPRESS_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: store-wp
+                  key: WORDPRESS_DB_USER
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: store-wp
+                  key: WORDPRESS_DB_PASSWORD
+            - name: WORDPRESS_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: store-wp
+                  key: WORDPRESS_ADMIN_USER
+            - name: WORDPRESS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: store-wp
+                  key: WORDPRESS_ADMIN_PASSWORD
+            - name: WORDPRESS_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: store-wp
+                  key: WORDPRESS_ADMIN_EMAIL
+            - name: WC_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: store-wp
+                  key: WC_CONSUMER_KEY
+            - name: WC_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: store-wp
+                  key: WC_CONSUMER_SECRET
+          resources:
+            {{- toYaml .Values.store.bootstrap.resources | nindent 12 }}
+          volumeMounts:
+            - name: wp-data
+              mountPath: /var/www/html
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "==> Step 0: Waiting for Database connection..."
+              php -r '
+              $h = "mariadb";
+              $u = getenv("WORDPRESS_DB_USER");
+              $p = getenv("WORDPRESS_DB_PASSWORD");
+              $d = getenv("WORDPRESS_DB_NAME");
+              for ($i = 0; $i < 60; $i++) {
+                  $conn = @new mysqli($h, $u, $p, $d, 3306);
+                  if (!$conn->connect_error) {
+                      echo "Database connected.\n";
+                      exit(0);
+                  }
+                  echo "Waiting for MariaDB...\n";
+                  sleep(3);
+              }
+              exit(1);
+              '
+
+              echo "==> Step 1: Waiting for WordPress files in /var/www/html..."
+              for i in $(seq 1 60); do
+                if [ -f /var/www/html/wp-config.php ]; then
+                  echo "wp-config.php found."
+                  break
+                fi
+                echo "Waiting for WordPress container to copy core files..."
+                sleep 3
+              done
+
+              echo "==> Step 1b: Patching wp-config.php for REST API authentication..."
+              php -r '
+              $file = "/var/www/html/wp-config.php";
+              if (file_exists($file)) {
+                  $code = file_get_contents($file);
+                  if (strpos($code, "HTTP_AUTHORIZATION") === false || strpos($code, "PHP_AUTH_USER") === false) {
+                      $patch = "\n/* In-cluster Basic Auth & SSL emulation for WC REST API */\n" .
+                               "if (strpos(\$_SERVER[\"REQUEST_URI\"] ?? \"\", \"/wp-json/wc/\") !== false) {\n" .
+                               "    \$_SERVER[\"HTTPS\"] = \"on\";\n" .
+                               "}\n" .
+                               "if (!empty(\$_SERVER[\"HTTP_AUTHORIZATION\"]) && empty(\$_SERVER[\"PHP_AUTH_USER\"])) {\n" .
+                               "    if (preg_match(\"/Basic\s+(.*)$/i\", \$_SERVER[\"HTTP_AUTHORIZATION\"], \$matches)) {\n" .
+                               "        \$creds = explode(\":\", base64_decode(\$matches[1]), 2);\n" .
+                               "        \$_SERVER[\"PHP_AUTH_USER\"] = \$creds[0] ?? \"\";\n" .
+                               "        \$_SERVER[\"PHP_AUTH_PW\"] = \$creds[1] ?? \"\";\n" .
+                               "    }\n" .
+                               "}\n";
+                      $code = preg_replace("/<\?php/", "<?php\n" . $patch, $code, 1);
+                      file_put_contents($file, $code);
+                      echo "Patched wp-config.php for REST Basic Auth.\n";
+                  }
+              }
+              '
+
+              echo "==> Step 2: Checking WordPress core installation..."
+              if ! wp core is-installed --path=/var/www/html 2>/dev/null; then
+                echo "Installing WordPress core..."
+                wp core install --path=/var/www/html \
+                  --url="http://store.local" \
+                  --title="Demo Store" \
+                  --admin_user="$WORDPRESS_ADMIN_USER" \
+                  --admin_password="$WORDPRESS_ADMIN_PASSWORD" \
+                  --admin_email="$WORDPRESS_ADMIN_EMAIL" \
+                  --skip-email
+              else
+                echo "WordPress core is already installed."
+              fi
+
+              echo "==> Step 3: Installing & Activating WooCommerce plugin..."
+              if ! wp plugin is-installed woocommerce --path=/var/www/html; then
+                echo "Installing WooCommerce..."
+                wp plugin install woocommerce --activate --path=/var/www/html 2>/dev/null || \
+                wp plugin install woocommerce --version=9.3.3 --activate --path=/var/www/html
+              else
+                echo "WooCommerce plugin already installed. Ensuring active..."
+                wp plugin activate woocommerce --path=/var/www/html || true
+              fi
+
+              echo "==> Step 4: Enabling Cash on Delivery (COD) payment gateway..."
+              wp eval --path=/var/www/html '
+              $settings = get_option("woocommerce_cod_settings", array());
+              if (!is_array($settings)) { $settings = array(); }
+              $settings["enabled"] = "yes";
+              $settings["title"] = "Cash on Delivery";
+              $settings["description"] = "Pay with cash upon delivery.";
+              update_option("woocommerce_cod_settings", $settings);
+              echo "COD enabled in woocommerce_cod_settings.\n";
+              '
+
+              echo "==> Step 5: Setting pretty permalinks for REST API..."
+              wp rewrite structure '/%postname%/' --hard --path=/var/www/html
+
+              echo "==> Step 6: Ensuring standard WooCommerce pages exist..."
+              wp eval --path=/var/www/html '
+              if (function_exists("wc_create_pages")) {
+                  wc_create_pages();
+                  echo "WooCommerce pages created/verified.\n";
+              }
+              $shop_page_id = function_exists("wc_get_page_id") ? wc_get_page_id("shop") : 0;
+              if ($shop_page_id > 0) {
+                  update_option("show_on_front", "page");
+                  update_option("page_on_front", $shop_page_id);
+                  wp_update_post(array("ID" => $shop_page_id, "post_content" => "[products]"));
+                  echo "Set front page to shop (ID $shop_page_id) with [products].\n";
+              }
+              '
+
+              echo "==> Step 7: Configuring WooCommerce REST API key for mcp-gateway..."
+              wp eval --path=/var/www/html '
+              global $wpdb;
+              $table = $wpdb->prefix . "woocommerce_api_keys";
+              $existing = $wpdb->get_var($wpdb->prepare("SELECT key_id FROM $table WHERE description = %s", "mcp-gateway"));
+              if (!$existing) {
+                  $ck = getenv("WC_CONSUMER_KEY");
+                  $cs = getenv("WC_CONSUMER_SECRET");
+                  $admin_user = get_user_by("login", getenv("WORDPRESS_ADMIN_USER"));
+                  $user_id = $admin_user ? $admin_user->ID : 1;
+                  $hashed_ck = hash_hmac("sha256", $ck, "wc-api");
+                  $truncated = substr($ck, -7);
+                  $wpdb->insert(
+                      $table,
+                      array(
+                          "user_id" => $user_id,
+                          "description" => "mcp-gateway",
+                          "permissions" => "read_write",
+                          "consumer_key" => $hashed_ck,
+                          "consumer_secret" => $cs,
+                          "truncated_key" => $truncated,
+                          "last_access" => null
+                      ),
+                      array("%d", "%s", "%s", "%s", "%s", "%s", "%s")
+                  );
+                  echo "Inserted mcp-gateway API key into $table.\n";
+              } else {
+                  echo "mcp-gateway API key already exists in $table.\n";
+              }
+              '
+
+              echo "==> Step 8: Ensuring Demo Shirt product exists..."
+              wp eval --path=/var/www/html '
+              $existing = get_page_by_path("demo-shirt", OBJECT, "product");
+              if (!$existing) {
+                  $product = new WC_Product_Simple();
+                  $product->set_name("Demo Shirt");
+                  $product->set_slug("demo-shirt");
+                  $product->set_regular_price("19.00");
+                  $product->set_status("publish");
+                  $product->set_catalog_visibility("visible");
+                  $product->set_manage_stock(false);
+                  $product->set_stock_status("instock");
+                  $product->save();
+                  echo "Created Demo Shirt product with ID: " . $product->get_id() . "\n";
+              } else {
+                  echo "Demo Shirt product already exists.\n";
+              }
+              '
+              echo "==> Bootstrap completed successfully!"
+      volumes:
+        - name: wp-data
+          persistentVolumeClaim:
+            claimName: wordpress-pvc

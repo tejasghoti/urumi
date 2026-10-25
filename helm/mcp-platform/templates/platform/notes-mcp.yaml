@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notes-mcp
+  namespace: {{ .Values.platform.namespace }}
+  labels:
+    app: notes-mcp
+spec:
+  replicas: {{ .Values.platform.notesMcp.replicas }}
+  selector:
+    matchLabels:
+      app: notes-mcp
+  template:
+    metadata:
+      labels:
+        app: notes-mcp
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+      containers:
+        - name: notes-mcp
+          image: {{ .Values.platform.notesMcp.image }}
+          imagePullPolicy: {{ .Values.platform.notesMcp.imagePullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PORT
+              value: "8080"
+          resources:
+            {{- toYaml .Values.platform.notesMcp.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notes-mcp
+  namespace: {{ .Values.platform.namespace }}
+  labels:
+    app: notes-mcp
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  selector:
+    app: notes-mcp

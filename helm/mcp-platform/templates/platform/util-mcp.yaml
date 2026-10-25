@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: util-mcp
+  namespace: {{ .Values.platform.namespace }}
+  labels:
+    app: util-mcp
+spec:
+  replicas: {{ .Values.platform.utilMcp.replicas }}
+  selector:
+    matchLabels:
+      app: util-mcp
+  template:
+    metadata:
+      labels:
+        app: util-mcp
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+      containers:
+        - name: util-mcp
+          image: {{ .Values.platform.utilMcp.image }}
+          imagePullPolicy: {{ .Values.platform.utilMcp.imagePullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PORT
+              value: "8080"
+          resources:
+            {{- toYaml .Values.platform.utilMcp.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: util-mcp
+  namespace: {{ .Values.platform.namespace }}
+  labels:
+    app: util-mcp
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  selector:
+    app: util-mcp
